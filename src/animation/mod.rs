@@ -2,16 +2,21 @@ pub mod airplanes;
 pub mod birds;
 pub mod chimney;
 pub mod clouds;
+pub mod coaster;
+pub mod ferris_wheel;
 pub mod fireflies;
 pub mod fog;
+pub mod kangaroo;
 pub mod leaves;
 pub mod moon;
 pub mod raindrops;
 pub mod snow;
 pub mod stars;
 pub mod sunny;
+pub mod surfer;
 pub mod system;
 pub mod thunderstorm;
+pub mod waves;
 
 pub use system::{
     AnimationSystem, ChimneyPosition, FrameCommands, FrameContext, RenderLayer, TerminalSize, Wind,

@@ -2,8 +2,14 @@ use crate::animation_manager::AnimationManager;
 use crate::app_state::AppState;
 use crate::config::{Config, Provider};
 use crate::error::WeatherError;
+use crate::gallery::{GALLERY, CityEntry, DEFAULT_CITIES, scene_for_city};
 use crate::render::TerminalRenderer;
+use crate::scene::beach::BeachScene;
+use crate::scene::city::CityScene;
+use crate::scene::farm::FarmScene;
+use crate::scene::mountain::MountainScene;
 use crate::scene::overlay::OverlayRegistry;
+use crate::scene::santa_cruz::SantaCruzScene;
 use crate::scene::world::WorldScene;
 use crate::scene::{SceneContext, SceneRegistry};
 use crate::theme::ThemeRegistry;
@@ -12,7 +18,7 @@ use crate::weather::provider::WeatherProvider;
 use crate::weather::provider::met_office::{MetOfficeProvider, MetOfficeProviderConfig};
 use crate::weather::types::CelestialEvents;
 use crate::weather::{
-    OpenMeteoProvider, WeatherClient, WeatherCondition, WeatherData, WeatherLocation,
+    OpenMeteoProvider, WeatherClient, WeatherCondition, WeatherData, WeatherLocation, WeatherUnits,
 };
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use serde::Deserialize;
@@ -25,6 +31,40 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(300);
 const INPUT_POLL_FPS: u64 = 30;
 const FRAME_DURATION: Duration = Duration::from_millis(1000 / INPUT_POLL_FPS);
 const DEFAULT_THEME_ID: &str = "default";
+
+/// Owned version of gallery::CityEntry (allows runtime-constructed entries).
+struct OwnedCityEntry {
+    name: String,
+    lat: f64,
+    lon: f64,
+    scene_id: &'static str,
+}
+
+impl OwnedCityEntry {
+    fn from_static(e: &CityEntry) -> Self {
+        Self { name: e.name.to_string(), lat: e.lat, lon: e.lon, scene_id: e.scene_id }
+    }
+
+    fn location(&self) -> WeatherLocation {
+        WeatherLocation { latitude: self.lat, longitude: self.lon, elevation: None }
+    }
+}
+
+fn spawn_weather_fetch(
+    provider: Arc<dyn WeatherProvider>,
+    wanted_provider: Provider,
+    location: WeatherLocation,
+    units: WeatherUnits,
+    tx: mpsc::Sender<Result<WeatherData, WeatherError>>,
+) {
+    use crate::weather::normalizer::WeatherNormalizer;
+    tokio::spawn(async move {
+        let result = provider.get_current_weather(&location, &units).await;
+        let mapped = result.map(|r| WeatherNormalizer::normalize(r));
+        let _ = tx.send(mapped).await;
+    });
+    let _ = wanted_provider; // suppress unused
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ThemeBindings {
@@ -130,7 +170,19 @@ pub struct App {
     active_scene_id: &'static str,
     active_overlay_id: Option<&'static str>,
     weather_receiver: mpsc::Receiver<Result<WeatherData, WeatherError>>,
+    /// Sender so city-switch can push a fresh weather result onto the same channel
+    weather_sender: mpsc::Sender<Result<WeatherData, WeatherError>>,
     hide_hud: bool,
+    /// Current index into GALLERY for cycling visual scenes with [ / ]
+    gallery_index: Option<usize>,
+    /// Ordered city list for ← → navigation
+    cities: Vec<OwnedCityEntry>,
+    /// Index into `cities` of the currently displayed city
+    city_index: usize,
+    /// Weather provider (needed for on-demand city-switch fetches)
+    provider: Arc<dyn WeatherProvider>,
+    wanted_provider: Provider,
+    units: WeatherUnits,
 }
 
 impl App {
@@ -158,13 +210,70 @@ impl App {
         );
         let mut animations = AnimationManager::new(term_width, term_height, show_leaves);
 
+        // Auto-select scene based on city name before resolving theme
+        let city_name = config.location.city.clone();
+        let auto_scene_id = city_name
+            .as_deref()
+            .map(scene_for_city)
+            .unwrap_or("world");
+
         let mut scenes = SceneRegistry::new();
         scenes.register(Box::new(WorldScene::new(term_width, term_height)));
+        scenes.register(Box::new(CityScene::new(term_width, term_height, city_name.clone())));
+        scenes.register(Box::new(FarmScene::new(term_width, term_height)));
+        scenes.register(Box::new(BeachScene::new(term_width, term_height)));
+        scenes.register(Box::new(MountainScene::new(term_width, term_height)));
+        scenes.register(Box::new(SantaCruzScene::new(term_width, term_height)));
 
         let overlays = OverlayRegistry::new();
-        let bindings = resolve_theme_bindings(&themes, &scenes, &overlays);
 
-        let (tx, rx) = mpsc::channel(1);
+        // If auto-scene differs from theme's scene, override the theme binding
+        let mut bindings = resolve_theme_bindings(&themes, &scenes, &overlays);
+        if bindings.scene_id == "world" && auto_scene_id != "world" {
+            // Use auto-detected scene (city name matched)
+            bindings = ThemeBindings {
+                theme_id: auto_scene_id,
+                scene_id: auto_scene_id,
+                overlay_id: None,
+            };
+        }
+
+        // Build city list: user's current location first, then the built-in gallery
+        let mut cities: Vec<OwnedCityEntry> = Vec::new();
+        cities.push(OwnedCityEntry {
+            name: city_name.clone().unwrap_or_else(|| {
+                format!("{:.2}°, {:.2}°", config.location.latitude, config.location.longitude)
+            }),
+            lat: config.location.latitude,
+            lon: config.location.longitude,
+            scene_id: auto_scene_id,
+        });
+        for e in DEFAULT_CITIES {
+            cities.push(OwnedCityEntry::from_static(e));
+        }
+
+        let (tx, rx) = mpsc::channel(4);
+
+        let wanted_provider = config
+            .provider
+            .keys()
+            .next()
+            .cloned()
+            .unwrap_or(Provider::default());
+
+        let provider: Arc<dyn WeatherProvider> = match wanted_provider {
+            Provider::OpenMeteo => Arc::new(OpenMeteoProvider::new()),
+            Provider::MetOffice => {
+                let provider_config = {
+                    if let Some(provider_config) = config.provider.get(&wanted_provider) {
+                        MetOfficeProviderConfig::deserialize(provider_config.clone()).unwrap()
+                    } else {
+                        MetOfficeProviderConfig::default()
+                    }
+                };
+                Arc::new(MetOfficeProvider::new(provider_config).unwrap())
+            }
+        };
 
         if let Some(ref condition_str) = simulate_condition {
             let simulated_condition =
@@ -178,16 +287,8 @@ impl App {
             let weather = WeatherData {
                 condition: simulated_condition,
                 temperature: 20.0,
-                precipitation: if simulated_condition.is_raining() {
-                    2.5
-                } else {
-                    0.0
-                },
-                wind_speed: if simulated_condition.is_thunderstorm() {
-                    45.0
-                } else {
-                    10.0
-                },
+                precipitation: if simulated_condition.is_raining() { 2.5 } else { 0.0 },
+                wind_speed: if simulated_condition.is_thunderstorm() { 45.0 } else { 10.0 },
                 wind_direction: 225.0,
                 sun: CelestialEvents::from_bool(!simulate_night),
                 moon_phase: Some(0.5),
@@ -205,28 +306,8 @@ impl App {
             animations.update_snow_intensity(snow_intensity);
             animations.update_wind(wind_speed as f32, wind_direction as f32);
         } else {
-            let wanted_provider = config
-                .provider
-                .keys()
-                .next()
-                .cloned()
-                .unwrap_or(Provider::default());
-
-            let provider: Arc<dyn WeatherProvider> = match wanted_provider {
-                Provider::OpenMeteo => Arc::new(OpenMeteoProvider::new()),
-                Provider::MetOffice => {
-                    let provider_config = {
-                        if let Some(provider_config) = config.provider.get(&wanted_provider) {
-                            MetOfficeProviderConfig::deserialize(provider_config.clone()).unwrap()
-                        } else {
-                            MetOfficeProviderConfig::default()
-                        }
-                    };
-                    Arc::new(MetOfficeProvider::new(provider_config).unwrap())
-                }
-            };
-
-            let weather_client = WeatherClient::new(provider, REFRESH_INTERVAL);
+            let weather_client = WeatherClient::new(Arc::clone(&provider), REFRESH_INTERVAL);
+            let tx_bg = tx.clone();
             let units = config.units;
 
             tokio::spawn(async move {
@@ -234,7 +315,7 @@ impl App {
                     let result = weather_client
                         .get_current_weather(&location, &units, wanted_provider)
                         .await;
-                    if tx.send(result).await.is_err() {
+                    if tx_bg.send(result).await.is_err() {
                         break;
                     }
                     tokio::time::sleep(REFRESH_INTERVAL).await;
@@ -242,16 +323,26 @@ impl App {
             });
         }
 
+        let initial_scene_id = bindings.scene_id;
+        state.active_scene_id = initial_scene_id;
+
         Self {
             state,
             animations,
             scenes,
             overlays,
             themes,
-            active_scene_id: bindings.scene_id,
+            active_scene_id: initial_scene_id,
             active_overlay_id: bindings.overlay_id,
             weather_receiver: rx,
+            weather_sender: tx,
             hide_hud: config.hide_hud,
+            gallery_index: None,
+            cities,
+            city_index: 0,
+            provider,
+            wanted_provider,
+            units: config.units,
         }
     }
 
@@ -332,6 +423,7 @@ impl App {
             let ctx = SceneContext {
                 conditions: &self.state.weather_conditions,
                 palette,
+                city_name: self.state.city_name.as_deref(),
             };
 
             self.animations.render_background(
@@ -377,6 +469,21 @@ impl App {
                     &self.state.cached_weather_info,
                     crossterm::style::Color::Cyan,
                 )?;
+
+                // City navigation bar (row 2)
+                let n = self.cities.len();
+                let city = &self.cities[self.city_index];
+                let nav_str = format!(
+                    " ← → city ({}/{})  [/] scene  r refresh  q quit ",
+                    self.city_index + 1,
+                    n
+                );
+                renderer.render_line_colored(2, 2, &nav_str, crossterm::style::Color::DarkGrey)?;
+
+                // City name highlight (row 3, centered)
+                let city_label = format!("  {}  ", city.name);
+                let cx = term_width.saturating_sub(city_label.len() as u16) / 2;
+                renderer.render_line_colored(cx, 3, &city_label, crossterm::style::Color::Yellow)?;
             }
 
             let attribution_x = if term_width > attribution.len() as u16 {
@@ -391,6 +498,25 @@ impl App {
                 &attribution,
                 crossterm::style::Color::DarkGrey,
             )?;
+
+            // Gallery mode label (row 2 from bottom, centered)
+            if let Some(idx) = self.gallery_index {
+                let entry = &GALLERY[idx];
+                let label = format!(
+                    " Scene {}/{}: {} ",
+                    idx + 1,
+                    GALLERY.len(),
+                    entry.label
+                );
+                let label_x = term_width.saturating_sub(label.len() as u16) / 2;
+                let label_y = attribution_y.saturating_sub(1);
+                renderer.render_line_colored(
+                    label_x,
+                    label_y,
+                    &label,
+                    crossterm::style::Color::Magenta,
+                )?;
+            }
 
             renderer.flush()?;
 
@@ -408,6 +534,71 @@ impl App {
                         {
                             break;
                         }
+
+                        // ← → navigate cities (fetches live weather)
+                        KeyCode::Left | KeyCode::Right => {
+                            let n = self.cities.len();
+                            self.city_index = if key_event.code == KeyCode::Right {
+                                (self.city_index + 1) % n
+                            } else {
+                                (self.city_index + n - 1) % n
+                            };
+                            self.gallery_index = None; // exit scene-gallery mode
+                            let city = &self.cities[self.city_index];
+                            let scene_id = city.scene_id;
+                            let city_name = city.name.clone();
+                            let loc = city.location();
+
+                            // Switch scene + theme immediately
+                            self.active_scene_id = scene_id;
+                            self.state.active_scene_id = scene_id;
+                            self.state.city_name = Some(city_name);
+                            self.state.location = loc;
+                            self.state.current_weather = None; // show loading
+                            self.state.weather_info_needs_update = true;
+                            let _ = self.themes.set_active(scene_id);
+
+                            // Kick off a fresh weather fetch for new coordinates
+                            spawn_weather_fetch(
+                                Arc::clone(&self.provider),
+                                self.wanted_provider,
+                                loc,
+                                self.units,
+                                self.weather_sender.clone(),
+                            );
+                        }
+
+                        // r = refresh weather for current city
+                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                            let city = &self.cities[self.city_index];
+                            let loc = city.location();
+                            spawn_weather_fetch(
+                                Arc::clone(&self.provider),
+                                self.wanted_provider,
+                                loc,
+                                self.units,
+                                self.weather_sender.clone(),
+                            );
+                        }
+
+                        // [ / ] cycle visual scene gallery (no weather fetch)
+                        KeyCode::Char(']') | KeyCode::Char('[') => {
+                            let n = GALLERY.len();
+                            let current = self.gallery_index.unwrap_or_else(|| {
+                                GALLERY.iter().position(|e| e.scene_id == self.active_scene_id).unwrap_or(0)
+                            });
+                            let next = if key_event.code == KeyCode::Char(']') {
+                                (current + 1) % n
+                            } else {
+                                (current + n - 1) % n
+                            };
+                            self.gallery_index = Some(next);
+                            let entry = &GALLERY[next];
+                            self.active_scene_id = entry.scene_id;
+                            self.state.active_scene_id = entry.scene_id;
+                            let _ = self.themes.set_active(entry.scene_id);
+                        }
+
                         _ => {}
                     },
                     _ => {}

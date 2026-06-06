@@ -1,9 +1,10 @@
 use crate::animation::{
     AnimationSystem, ChimneyPosition, FrameCommands, FrameContext, RenderLayer, TerminalSize, Wind,
     airplanes::AirplaneSystem, birds::BirdSystem, chimney::ChimneySmoke, clouds::CloudSystem,
-    fireflies::FireflySystem, fog::FogSystem, leaves::FallingLeaves, moon::MoonSystem,
+    coaster::CoasterSystem, ferris_wheel::FerrisWheelSystem, fireflies::FireflySystem,
+    fog::FogSystem, kangaroo::KangarooSystem, leaves::FallingLeaves, moon::MoonSystem,
     raindrops::RaindropSystem, snow::SnowSystem, stars::StarSystem, sunny::SunSystem,
-    thunderstorm::ThunderstormSystem,
+    surfer::SurferSystem, thunderstorm::ThunderstormSystem, waves::WaveSystem,
 };
 use crate::app_state::AppState;
 use crate::render::TerminalRenderer;
@@ -44,6 +45,12 @@ impl AnimationManager {
             )),
             Box::new(FogSystem::new(term_width, term_height, FogIntensity::Light)),
             Box::new(FallingLeaves::new(term_width, term_height)),
+            // Scene-specific
+            Box::new(WaveSystem::new(term_width, term_height)),
+            Box::new(CoasterSystem::new(term_width, term_height)),
+            Box::new(FerrisWheelSystem::new(term_width, term_height)),
+            Box::new(KangarooSystem::new(term_width, term_height)),
+            Box::new(SurferSystem::new(term_width, term_height)),
         ];
 
         debug_assert!(

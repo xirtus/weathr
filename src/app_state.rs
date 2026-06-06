@@ -3,6 +3,7 @@ use crate::weather::{
     WeatherCondition, WeatherConditions, WeatherData, WeatherLocation, WeatherUnits,
     format_precipitation, format_temperature, format_wind_speed,
 };
+use chrono::Local;
 use std::time::Instant;
 
 pub struct AppState {
@@ -17,6 +18,8 @@ pub struct AppState {
     pub location_display: LocationDisplay,
     pub hide_location: bool,
     pub units: WeatherUnits,
+    /// ID of the currently active scene — read by scene-specific animation systems.
+    pub active_scene_id: &'static str,
 }
 
 impl AppState {
@@ -39,6 +42,7 @@ impl AppState {
             location_display,
             hide_location,
             units,
+            active_scene_id: "world",
         }
     }
 
@@ -124,6 +128,8 @@ impl AppState {
             format!(" | Location: {}", label)
         };
 
+        let local_time = Local::now().format("%H:%M").to_string();
+
         self.cached_weather_info = if let Some(ref weather) = self.current_weather {
             let (temp, temp_unit) = format_temperature(weather.temperature, self.units.temperature);
             let (wind, wind_unit) = format_wind_speed(weather.wind_speed, self.units.wind_speed);
@@ -133,8 +139,9 @@ impl AppState {
             let offline_indicator = if self.is_offline { "OFFLINE | " } else { "" };
 
             format!(
-                "{}Weather: {} | Temp: {:.1}{} | Wind: {:.1}{} | Precip: {:.1}{}{} | Press 'q' to quit",
+                "{}{} | Weather: {} | Temp: {:.1}{} | Wind: {:.1}{} | Precip: {:.1}{}{} | [/] gallery  q quit",
                 offline_indicator,
+                local_time,
                 self.get_condition_text(),
                 temp,
                 temp_unit,
@@ -145,7 +152,7 @@ impl AppState {
                 location_str
             )
         } else {
-            format!("Weather: Loading... {}", self.loading_state.current_char())
+            format!("{} | Weather: Loading... {}", local_time, self.loading_state.current_char())
         };
 
         self.weather_info_needs_update = false;

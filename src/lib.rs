@@ -1,10 +1,12 @@
 pub mod animation;
 pub mod animation_manager;
+pub mod app;
 pub mod app_state;
 pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod error;
+pub mod gallery;
 pub mod geolocation;
 pub mod render;
 pub mod scene;

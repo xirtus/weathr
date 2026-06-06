@@ -1,4 +1,9 @@
+pub mod beach;
+pub mod city;
+pub mod farm;
+pub mod mountain;
 pub mod overlay;
+pub mod santa_cruz;
 pub mod world;
 
 use crate::render::TerminalRenderer;
@@ -10,6 +15,8 @@ use std::io;
 pub struct SceneContext<'a> {
     pub conditions: &'a WeatherConditions,
     pub palette: &'a Palette,
+    /// Name of the current city, used by landmark-aware scenes.
+    pub city_name: Option<&'a str>,
 }
 
 #[derive(Clone, Copy)]
