@@ -164,16 +164,23 @@ impl Scene for CityScene {
             .unwrap_or_default();
 
         if city.contains("new york") || city.contains("nyc") {
-            // Empire State center + Statue of Liberty on the left
+            // Empire State center
             Self::render_landmark(renderer, NYC_ART, center_x, ground_y, style.landmark)?;
-            if w > 50 {
-                let lib_x = center_x / 3;
-                Self::render_landmark(renderer, STATUE_LIBERTY_ART, lib_x, ground_y, Color::DarkGreen)?;
-            }
+
+            // Right building
             Self::render_building(renderer, center_x + 14 * scale, ground_y, 8 * scale, 12, &style, is_day)?;
-            if w > 80 && center_x > 22 * scale {
-                Self::render_building(renderer, center_x.saturating_sub(22 * scale), ground_y, 7 * scale, 10, &style, is_day)?;
-            }
+
+            // Left building, then Statue of Liberty just left of it so it's clearly visible
+            let left_bld_x = if w > 80 && center_x > 22 * scale {
+                let bx = center_x.saturating_sub(22 * scale);
+                Self::render_building(renderer, bx, ground_y, 7 * scale, 10, &style, is_day)?;
+                bx
+            } else {
+                center_x.saturating_sub(22)
+            };
+            // Statue of Liberty: left of the leftmost building, bright green
+            let lib_center = left_bld_x.saturating_sub(8).max(6);
+            Self::render_landmark(renderer, STATUE_LIBERTY_ART, lib_center, ground_y, Color::Green)?;
 
         } else if city.contains("london") {
             // Big Ben center + Tower Bridge on the right
