@@ -1,10 +1,13 @@
 use crate::animation::{
     AnimationSystem, ChimneyPosition, FrameCommands, FrameContext, RenderLayer, TerminalSize, Wind,
-    airplanes::AirplaneSystem, birds::BirdSystem, chimney::ChimneySmoke, clouds::CloudSystem,
-    coaster::CoasterSystem, ferris_wheel::FerrisWheelSystem, fireflies::FireflySystem,
-    fog::FogSystem, kangaroo::KangarooSystem, leaves::FallingLeaves, moon::MoonSystem,
-    raindrops::RaindropSystem, snow::SnowSystem, stars::StarSystem, sunny::SunSystem,
-    surfer::SurferSystem, thunderstorm::ThunderstormSystem, waves::WaveSystem,
+    airplanes::AirplaneSystem, beach_walkers::BeachWalkersSystem, birds::BirdSystem,
+    chimney::ChimneySmoke, clouds::CloudSystem, coaster::CoasterSystem,
+    ferris_wheel::FerrisWheelSystem, fireflies::FireflySystem, fog::FogSystem,
+    kangaroo::KangarooSystem, leaves::FallingLeaves, moon::MoonSystem,
+    raindrops::RaindropSystem, sakura::SakuraSystem, shibuya::ShibuyaSystem,
+    skier::SkierSystem, snow::SnowSystem,
+    stars::StarSystem, sunny::SunSystem, surfer::SurferSystem,
+    thunderstorm::ThunderstormSystem, waves::WaveSystem,
 };
 use crate::app_state::AppState;
 use crate::render::TerminalRenderer;
@@ -51,6 +54,10 @@ impl AnimationManager {
             Box::new(FerrisWheelSystem::new(term_width, term_height)),
             Box::new(KangarooSystem::new(term_width, term_height)),
             Box::new(SurferSystem::new(term_width, term_height)),
+            Box::new(BeachWalkersSystem::new(term_width, term_height)),
+            Box::new(SakuraSystem::new(term_width, term_height)),
+            Box::new(ShibuyaSystem::new(term_width, term_height)),
+            Box::new(SkierSystem::new(term_width, term_height)),
         ];
 
         debug_assert!(

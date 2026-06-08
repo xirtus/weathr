@@ -1,4 +1,5 @@
 pub mod airplanes;
+pub mod beach_walkers;
 pub mod birds;
 pub mod chimney;
 pub mod clouds;
@@ -10,6 +11,9 @@ pub mod kangaroo;
 pub mod leaves;
 pub mod moon;
 pub mod raindrops;
+pub mod sakura;
+pub mod shibuya;
+pub mod skier;
 pub mod snow;
 pub mod stars;
 pub mod sunny;

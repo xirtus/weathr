@@ -10,6 +10,8 @@ const PEAKS_ASCII: &str = include_str!("assets/peaks.txt");
 const CABIN_ASCII: &str = include_str!("assets/cabin.txt");
 const MATTERHORN_ASCII: &str = include_str!("assets/matterhorn.txt");
 const MOOSE_ASCII: &str = include_str!("assets/moose.txt");
+const COLORADO_PEAKS: &str = include_str!("assets/colorado_peaks.txt");
+const SKIJUMP_ASCII: &str = include_str!("assets/skijump.txt");
 
 pub struct MountainScene {
     width: u16,
@@ -149,8 +151,68 @@ impl Scene for MountainScene {
         let city = ctx.city_name.map(|s| s.to_lowercase()).unwrap_or_default();
         let is_zermatt = city.contains("zermatt");
         let is_banff = city.contains("banff");
+        let is_colorado = city.contains("denver") || city.contains("colorado");
 
-        if is_zermatt {
+        if is_colorado && w >= 40 {
+            // ── Colorado: Ski jump + mountain peaks backdrop ──
+
+            // Mountain peaks backdrop (centered, behind everything)
+            let peaks_lines: Vec<&str> = COLORADO_PEAKS.lines().collect();
+            let pw = peaks_lines.iter().map(|l| l.len()).max().unwrap_or(0) as u16;
+            let ph = peaks_lines.len() as u16;
+            let px = center.saturating_sub(pw / 2);
+            let py = ground_y.saturating_sub(ph + 3);
+            for (row, line) in peaks_lines.iter().enumerate() {
+                for (col, ch) in line.chars().enumerate() {
+                    if ch == ' ' { continue; }
+                    let color = match ch {
+                        '/' | '\\' | '|' => style.slope,
+                        '_' | '-' => style.ground_rock,
+                        'X' | 'x' => style.peak_rock,
+                        '*' => style.peak_snow,
+                        _ => style.peak_snow,
+                    };
+                    renderer.render_char(px + col as u16, py + row as u16, ch, color)?;
+                }
+            }
+
+            // Ski jump — right side
+            let jump_lines: Vec<&str> = SKIJUMP_ASCII.lines().collect();
+            let jw = jump_lines.iter().map(|l| l.len()).max().unwrap_or(0) as u16;
+            let jh = jump_lines.len() as u16;
+            let jx = w.saturating_sub(jw + 2);
+            let jy = ground_y.saturating_sub(jh + 2);
+            for (row, line) in jump_lines.iter().enumerate() {
+                for (col, ch) in line.chars().enumerate() {
+                    if ch == ' ' { continue; }
+                    let color = match ch {
+                        '.' | '\'' | '`' => style.peak_snow,
+                        '/' | '\\' | '|' | '_' | '-' => style.slope,
+                        '#' => Color::DarkYellow,
+                        '=' => Color::Rgb { r: 100, g: 160, b: 220 },
+                        _ => Color::DarkGrey,
+                    };
+                    renderer.render_char(jx + col as u16, jy + row as u16, ch, color)?;
+                }
+            }
+
+            // Pine trees at base
+            if center > 6 {
+                Self::render_pine(renderer, center.saturating_sub(20), ground_y, style.pine)?;
+            }
+            if center + 26 < w {
+                Self::render_pine(renderer, center + 16, ground_y, style.pine)?;
+            }
+            if w > 100 {
+                if center > 14 {
+                    Self::render_pine(renderer, center.saturating_sub(28), ground_y, style.pine)?;
+                }
+                if center + 34 < w {
+                    Self::render_pine(renderer, center + 24, ground_y, style.pine)?;
+                }
+            }
+
+        } else if is_zermatt {
             // Matterhorn: distinctive steep peak
             Self::render_art_centered(renderer, MATTERHORN_ASCII, center, ground_y, Color::White)?;
 
