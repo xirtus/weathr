@@ -27,6 +27,7 @@ pub const DEFAULT_CITIES: &[CityEntry] = &[
     CityEntry { name: "Sydney, AU",        lat: -33.8688, lon:  151.2093, scene_id: "city" },
     CityEntry { name: "Dubai, UAE",        lat:  25.2048, lon:   55.2708, scene_id: "city" },
     CityEntry { name: "Chicago, IL",       lat:  41.8781, lon:  -87.6298, scene_id: "city" },
+    CityEntry { name: "Minneapolis, MN",   lat:  44.9778, lon:  -93.2650, scene_id: "city" },
     CityEntry { name: "Berlin, Germany",   lat:  52.5200, lon:   13.4050, scene_id: "city" },
     CityEntry { name: "Amsterdam, NL",     lat:  52.3676, lon:    4.9041, scene_id: "city" },
 ];

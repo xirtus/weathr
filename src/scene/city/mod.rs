@@ -21,6 +21,10 @@ const STATUE_LIBERTY_ART: &str = include_str!("assets/statue_liberty.txt");
 const TOWER_BRIDGE_ART: &str = include_str!("assets/tower_bridge.txt");
 const ARC_ART: &str = include_str!("assets/arc.txt");
 const TOKYO_SKYLINE_ART: &str = include_str!("assets/tokyo_skyline.txt");
+const FIRST_NATIONAL_BANK_ART: &str = include_str!("assets/first_national_bank.txt");
+const SCHMIDT_BREWERY_ART: &str = include_str!("assets/schmidt_brewery.txt");
+const ROBERT_STREET_BRIDGE_ART: &str = include_str!("assets/robert_street_bridge.txt");
+const MINNEAPOLIS_SKYLINE_ART: &str = include_str!("assets/minneapolis_skyline.txt");
 
 pub struct CityScene {
     width: u16,
@@ -662,6 +666,277 @@ impl Scene for CityScene {
             for col in 2..(w.saturating_sub(2)) {
                 if col % 6 < 3 {
                     renderer.render_char(col, ground_y, '~', Color::Cyan)?;
+                }
+            }
+
+        } else if city.contains("minneapolis") || city.contains("st paul") || city.contains("saint paul") || city.contains("twin cities") {
+            // ═══════════════════════════════════════════════════════════════
+            //  MINNEAPOLIS / TWIN CITIES  —  Mississippi River
+            //  · Robert Street Bridge · First National Bank · Schmidt Brewery
+            // ═══════════════════════════════════════════════════════════════
+
+            let river_blue = if is_day {
+                Color::Rgb { r: 30, g: 120, b: 200 }
+            } else {
+                Color::Rgb { r: 20, g: 55, b: 110 }
+            };
+            let river_dark = if is_day {
+                Color::Rgb { r: 15, g: 80, b: 160 }
+            } else {
+                Color::Rgb { r: 10, g: 30, b: 70 }
+            };
+            let brick_red = Color::Rgb { r: 175, g: 75, b: 35 };
+            let castle_stone = Color::Rgb { r: 160, g: 140, b: 110 };
+
+            // ── Layer 0: Mississippi River + city backdrop ──
+            let skyline_lines: Vec<&str> = MINNEAPOLIS_SKYLINE_ART.lines().collect();
+            if !skyline_lines.is_empty() {
+                let art_w = skyline_lines.iter().map(|l| l.len()).max().unwrap_or(0) as u16;
+                let art_h = skyline_lines.len() as u16;
+                let start_y = ground_y.saturating_sub(art_h);
+                let offset_x = if w > art_w { (w - art_w) / 2 } else { 0 };
+                for (row, line) in skyline_lines.iter().enumerate() {
+                    let y = start_y + row as u16;
+                    for (col, ch) in line.chars().enumerate() {
+                        if ch == ' ' { continue; }
+                        let x = offset_x + col as u16;
+                        if x >= w { continue; }
+                        let color = match ch {
+                            '~' => river_blue,
+                            '|' | '_' => {
+                                if is_day { Color::Rgb { r: 80, g: 80, b: 90 } }
+                                else { Color::Rgb { r: 60, g: 60, b: 75 } }
+                            }
+                            _ => {
+                                if is_day { Color::DarkGrey }
+                                else { Color::Rgb { r: 70, g: 70, b: 80 } }
+                            }
+                        };
+                        renderer.render_char(x, y, ch, color)?;
+                    }
+                }
+            }
+
+            // ── Layer 1: Robert Street Bridge — rainbow arch spanning the river ──
+            // The bridge sits in the midground, arches reach up from deck at ground_y-2
+            let bridge_base_y = ground_y.saturating_sub(2);
+            Self::render_landmark(renderer, ROBERT_STREET_BRIDGE_ART, cx, bridge_base_y, Color::Grey)?;
+            // Bridge deck railing detail
+            for col in (cx.saturating_sub(14))..(cx + 14).min(w) {
+                if col % 3 == 0 {
+                    renderer.render_char(col, bridge_base_y.saturating_sub(1), '|',
+                        Color::Rgb { r: 100, g: 100, b: 110 })?;
+                }
+            }
+            // Suspension/arch cables — decorative vertical lines above arch
+            for i in 0u16..6u16 {
+                let cx_off = cx.saturating_sub(8) + i * 3;
+                if cx_off < w {
+                    for dy in 0u16..4u16 {
+                        let cy = bridge_base_y.saturating_sub(11 + dy);
+                        renderer.render_char(cx_off, cy, '¦', Color::Rgb { r: 80, g: 80, b: 90 })?;
+                    }
+                }
+            }
+
+            // ── Layer 2: Schmidt Brewery — historic castle-like brewery, far left ──
+            let brewery_x = (w as f32 * 0.16) as u16;
+            // First render a solid brick silhouette
+            let brewery_lines: Vec<&str> = SCHMIDT_BREWERY_ART.lines().collect();
+            let brew_w = brewery_lines.iter().map(|l| l.len()).max().unwrap_or(0) as u16;
+            let brew_h = brewery_lines.len() as u16;
+            let brew_sx = brewery_x.saturating_sub(brew_w / 2);
+            let brew_sy = ground_y.saturating_sub(brew_h);
+            for row in 0..brew_h {
+                for col in 0..brew_w {
+                    if brewery_lines[row as usize].chars().nth(col as usize) != Some(' ') {
+                        renderer.render_char(brew_sx + col, brew_sy + row, '#', brick_red)?;
+                    }
+                }
+            }
+            // Render the outline in lighter stone
+            Self::render_landmark(renderer, SCHMIDT_BREWERY_ART, brewery_x, ground_y, castle_stone)?;
+            // Brewery chimney / smokestack extending above
+            let chimney_x = brewery_x.saturating_sub(6);
+            for i in 0u16..5u16 {
+                renderer.render_char(chimney_x, ground_y.saturating_sub(brew_h + i), '█', brick_red)?;
+            }
+            renderer.render_char(chimney_x, ground_y.saturating_sub(brew_h + 5), '▄', Color::DarkGrey)?;
+            // Chimney smoke (day only — at night it fades into dark sky)
+            if is_day {
+                for i in 0u16..3u16 {
+                    renderer.render_char(chimney_x.saturating_sub(1) + i, ground_y.saturating_sub(brew_h + 6), '~', Color::Rgb { r: 200, g: 200, b: 210 })?;
+                }
+                renderer.render_char(chimney_x + 1, ground_y.saturating_sub(brew_h + 7), '~', Color::Rgb { r: 180, g: 180, b: 195 })?;
+            }
+
+            // ── Layer 3: First National Bank Building — centerpiece Art Deco ziggurat ──
+            Self::render_landmark(renderer, FIRST_NATIONAL_BANK_ART, cx, ground_y, style.landmark)?;
+            // The "1ST" sign sits at the very top of the art — add a glowing halo
+            let sign_top_y = ground_y.saturating_sub(17);  // row 0 of bank art (17 lines)
+            let sign_red = Color::Rgb { r: 255, g: 30, b: 30 };
+            let sign_gold = Color::Rgb { r: 255, g: 210, b: 0 };
+            // Red glow dots around 1ST
+            for dx in -3i16..=3i16 {
+                let ch_x = (cx as i16 + dx).max(0) as u16;
+                if ch_x < w {
+                    renderer.render_char(ch_x, sign_top_y.saturating_sub(1), '·', sign_red)?;
+                    if dx.abs() <= 1 {
+                        renderer.render_char(ch_x, sign_top_y.saturating_sub(2), '·', sign_red)?;
+                    }
+                }
+            }
+            // Golden crown accent above sign
+            renderer.render_char(cx, sign_top_y.saturating_sub(1), '♦', sign_gold)?;
+            if !is_day {
+                // Night: brilliant red neon glow
+                for dx in -5i16..=5i16 {
+                    let ch_x = (cx as i16 + dx).max(0) as u16;
+                    if ch_x < w {
+                        let dist = dx.unsigned_abs();
+                        let brightness = 255u8.saturating_sub((dist as u8) * 35);
+                        let glow = Color::Rgb { r: brightness, g: 15.max(brightness / 5), b: 15.max(brightness / 5) };
+                        renderer.render_char(ch_x, sign_top_y, '▀', glow)?;
+                        renderer.render_char(ch_x, sign_top_y.saturating_sub(1), '·', glow)?;
+                    }
+                }
+                // Neon 1ST overwrite for punch
+                let letters = ['1', 'S', 'T'];
+                for (i, &ch) in letters.iter().enumerate() {
+                    let neon_color = match i {
+                        0 => Color::Rgb { r: 255, g: 40, b: 40 },   // deep red
+                        1 => Color::Rgb { r: 255, g: 220, b: 30 },  // gold
+                        _ => Color::Rgb { r: 255, g: 255, b: 60 },  // bright
+                    };
+                    renderer.render_char(cx.saturating_sub(1) + i as u16, sign_top_y, ch, neon_color)?;
+                }
+            }
+
+            // ── Layer 4: Downtown skyline — buildings flanking First National Bank ──
+            // Right-side towers
+            Self::render_building(renderer, cx + 13 * s, ground_y, 7 * s, 14, &style, is_day)?;
+            Self::render_building(renderer, cx + 22 * s, ground_y, 6 * s, 11, &style, is_day)?;
+            Self::render_building(renderer, cx + 30 * s, ground_y, 5 * s, 8, &style, is_day)?;
+            if w > 90 {
+                Self::render_building(renderer, cx + 37 * s, ground_y, 7 * s, 16, &style, is_day)?;
+                Self::render_antenna(renderer, cx + 40 * s, ground_y.saturating_sub(16), 3, style.antenna)?;
+            }
+            if w > 110 {
+                Self::render_building(renderer, cx + 46 * s, ground_y, 6 * s, 10, &style, is_day)?;
+                Self::render_building(renderer, cx + 54 * s, ground_y, 5 * s, 7, &style, is_day)?;
+            }
+            // Left-side towers
+            if cx > 13 * s {
+                Self::render_building(renderer, cx.saturating_sub(13 * s), ground_y, 6 * s, 12, &style, is_day)?;
+            }
+            if cx > 21 * s {
+                Self::render_building(renderer, cx.saturating_sub(21 * s), ground_y, 5 * s, 9, &style, is_day)?;
+            }
+            if w > 100 && cx > 29 * s {
+                Self::render_building(renderer, cx.saturating_sub(29 * s), ground_y, 7 * s, 13, &style, is_day)?;
+                Self::render_antenna(renderer, cx.saturating_sub(26 * s), ground_y.saturating_sub(13), 2, style.antenna)?;
+            }
+
+            // ── Layer 5: Riverbank trees — lush greenery along the Mississippi ──
+            if is_day {
+                let tree_positions: &[(u16, u16)] = &[
+                    ((w as f32 * 0.08) as u16, ground_y.saturating_sub(1)),
+                    ((w as f32 * 0.22) as u16, ground_y.saturating_sub(1)),
+                    ((w as f32 * 0.72) as u16, ground_y.saturating_sub(1)),
+                    ((w as f32 * 0.88) as u16, ground_y.saturating_sub(1)),
+                    ((w as f32 * 0.50) as u16, ground_y.saturating_sub(1)),
+                ];
+                for &(tx, ty) in tree_positions {
+                    if tx > 2 && tx < w.saturating_sub(3) {
+                        let canopy = Color::Rgb { r: 30, g: 130, b: 40 };
+                        let canopy_dark = Color::Rgb { r: 20, g: 100, b: 25 };
+                        let trunk = Color::Rgb { r: 110, g: 70, b: 40 };
+                        // Canopy
+                        renderer.render_char(tx.saturating_sub(1), ty.saturating_sub(1), '◄', canopy)?;
+                        renderer.render_char(tx, ty.saturating_sub(1), '▲', canopy_dark)?;
+                        renderer.render_char(tx + 1, ty.saturating_sub(1), '►', canopy)?;
+                        renderer.render_char(tx, ty.saturating_sub(2), '▲', canopy)?;
+                        // Trunk
+                        renderer.render_char(tx, ty, '│', trunk)?;
+                    }
+                }
+            }
+
+            // ── Layer 6: Mississippi River — flowing water foreground ──
+            // Shimmering wave patterns on the water surface
+            for col in 2..(w.saturating_sub(2)) {
+                let wave_char = match col % 6 {
+                    0 => '~',
+                    1 | 2 => '∿',
+                    3 => '≈',
+                    _ => '~',
+                };
+                if col % 7 < 3 {
+                    renderer.render_char(col, ground_y, wave_char, river_blue)?;
+                } else if col % 11 == 0 {
+                    renderer.render_char(col, ground_y, '∿', Color::Rgb { r: 40, g: 160, b: 220 })?;
+                }
+            }
+            // Deeper water layers — darker, slower
+            for row in 1u16..3u16 {
+                for col in 3..(w.saturating_sub(3)) {
+                    if (col + row * 3) % 9 < 3 {
+                        renderer.render_char(col, ground_y + row, '~', river_dark)?;
+                    }
+                }
+            }
+
+            // ── Layer 7: Nighttime magic ──
+            if !is_day {
+                // City lights reflected in the river
+                for col in (cx.saturating_sub(25))..(cx + 25).min(w) {
+                    if col % 4 == 0 {
+                        let refl = Color::Rgb { r: 220, g: 180, b: 50 };
+                        renderer.render_char(col, ground_y + 2, '│', refl)?;
+                    }
+                    if col % 7 == 0 {
+                        let refl_bright = Color::Rgb { r: 255, g: 220, b: 100 };
+                        renderer.render_char(col, ground_y + 1, '·', refl_bright)?;
+                    }
+                }
+                // Golden lights on the bridge
+                for col in (cx.saturating_sub(12))..(cx + 12).min(w) {
+                    if col % 4 == 0 {
+                        renderer.render_char(col, bridge_base_y.saturating_sub(1), '▪',
+                            Color::Rgb { r: 255, g: 180, b: 50 })?;
+                    }
+                }
+                // Brewery warm interior glow
+                for dx in 0u16..brew_w {
+                    let bx = brew_sx + dx;
+                    if bx < w && bx % 2 == 0 {
+                        let by = ground_y.saturating_sub(brew_h / 2);
+                        renderer.render_char(bx, by, '▪', Color::Rgb { r: 255, g: 140, b: 40 })?;
+                    }
+                }
+                // Moon over the river
+                let moon_x = (w as f32 * 0.78) as u16;
+                let moon_y = ground_y.saturating_sub(18).max(3);
+                renderer.render_char(moon_x, moon_y, '◯', Color::Rgb { r: 255, g: 240, b: 200 })?;
+                renderer.render_char(moon_x.saturating_sub(1), moon_y.saturating_sub(1), '·', Color::Rgb { r: 255, g: 255, b: 220 })?;
+                renderer.render_char(moon_x + 1, moon_y.saturating_sub(1), '·', Color::Rgb { r: 255, g: 255, b: 220 })?;
+                // Moon reflection on water
+                for i in 0u16..5u16 {
+                    let ry = ground_y + 1 + (i % 2);
+                    let rx = moon_x.saturating_sub(2) + i;
+                    if rx < w {
+                        renderer.render_char(rx, ry, '·',
+                            Color::Rgb { r: 200, g: 200, b: 140 })?;
+                    }
+                }
+
+                // ── Street-level glow along the riverbank ──
+                for col in 4u16..(w.saturating_sub(4)) {
+                    if col % 12 == 0 {
+                        let lamp = Color::Rgb { r: 255, g: 200, b: 100 };
+                        renderer.render_char(col, ground_y.saturating_sub(1), '●', lamp)?;
+                        renderer.render_char(col, ground_y, '│', Color::Rgb { r: 180, g: 140, b: 60 })?;
+                    }
                 }
             }
 
